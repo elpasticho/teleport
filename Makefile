@@ -118,6 +118,15 @@ ifneq ("$(OS)", "windows")
 endif
 
 #
+# make full-ent - Builds Teleport enterprise binaries
+#
+.PHONY:full-ent
+full-ent:
+ifneq ("$(OS)", "windows")
+	@if [ -f e/Makefile ]; then $(MAKE) -C e full; fi
+endif
+
+#
 # make clean - Removed all build artifacts.
 #
 .PHONY: clean

@@ -71,6 +71,10 @@ func (s *S3ThirdPartySuite) TestDownloadNotFound(c *check.C) {
 	s.DownloadNotFound(c)
 }
 
+func (s *S3ThirdPartySuite) TestStream(c *check.C) {
+	s.Stream(c)
+}
+
 func (s *S3ThirdPartySuite) TearDownSuite(c *check.C) {
 	if s.handler != nil {
 		if err := s.handler.deleteBucket(); err != nil {

@@ -1,5 +1,5 @@
 /*
-Copyright 2015-2019 Gravitational, Inc.
+Copyright 2015-2020 Gravitational, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package events
 
 import (
+	"archive/tar"
 	"bufio"
 	"bytes"
 	"compress/gzip"
@@ -48,7 +49,11 @@ const (
 	// in /var/lib/teleport/logs/sessions
 	SessionLogsDir = "sessions"
 
-	// PlaybacksDir is a directory for playbacks
+	// StreamingLogsDir is a subdirectory of sessions /var/lib/teleport/logs/streaming
+	// is used in new versions of the uploader
+	StreamingLogsDir = "streaming"
+
+	// PlaybackDir is a directory for playbacks
 	PlaybackDir = "playbacks"
 
 	// LogfileExt defines the ending of the daily event log file
@@ -340,7 +345,7 @@ func (l *AuditLog) UploadSessionRecording(r SessionRecording) error {
 		return trace.Wrap(err)
 	}
 	l.WithFields(log.Fields{"duration": time.Since(start), "session-id": r.SessionID}).Debugf("Session upload completed.")
-	return l.EmitAuditEvent(SessionUpload, EventFields{
+	return l.EmitAuditEventLegacy(SessionUploadE, EventFields{
 		SessionEventID: string(r.SessionID),
 		URL:            url,
 		EventIndex:     SessionUploadIndex,
@@ -376,7 +381,7 @@ func (l *AuditLog) processSlice(sl SessionLogger, slice *SessionSlice) error {
 		if err != nil {
 			return trace.Wrap(err)
 		}
-		if err := l.EmitAuditEvent(Event{Name: chunk.EventType}, fields); err != nil {
+		if err := l.EmitAuditEventLegacy(Event{Name: chunk.EventType}, fields); err != nil {
 			return trace.Wrap(err)
 		}
 	}
@@ -652,7 +657,23 @@ func (l *AuditLog) downloadSession(namespace string, sid session.ID) error {
 		return trace.ConvertSystemError(err)
 	}
 	if err := utils.Extract(tarball, l.playbackDir); err != nil {
-		return trace.Wrap(err)
+		if trace.Unwrap(err) != tar.ErrHeader {
+			return trace.Wrap(err)
+		}
+		_, err = tarball.Seek(0, 0)
+		if err != nil {
+			return trace.ConvertSystemError(err)
+		}
+		l.Debugf("Converting %v to playback format.", tarballPath)
+		protoReader := NewProtoReader(tarball)
+		err = WriteForPlayback(l.Context, sid, protoReader, l.playbackDir)
+		if err != nil {
+			l.Errorf("Failed to convert: %v\n", trace.DebugReport(err))
+			return trace.Wrap(err)
+		}
+		stats := protoReader.GetStats().ToFields()
+		stats["duration"] = time.Now().Sub(start)
+		l.WithFields(stats).Debugf("Converted %v to %v.", tarballPath, l.playbackDir)
 	}
 	// Extract every chunks file on disk while holding the context,
 	// otherwise parallel downloads will try to unpack the file at the same time.
@@ -909,16 +930,16 @@ func (l *AuditLog) fetchSessionEvents(fileName string, afterN int) ([]EventField
 	return retval, nil
 }
 
-// EmitAuditEvent adds a new event to the log. If emitting fails, a Prometheus
+// EmitAuditEventLegacy adds a new event to the log. If emitting fails, a Prometheus
 // counter is incremented.
-func (l *AuditLog) EmitAuditEvent(event Event, fields EventFields) error {
+func (l *AuditLog) EmitAuditEventLegacy(event Event, fields EventFields) error {
 	// If an external logger has been set, use it as the emitter, otherwise
 	// fallback to the local disk based emitter.
 	var emitAuditEvent func(event Event, fields EventFields) error
 	if l.ExternalLog != nil {
-		emitAuditEvent = l.ExternalLog.EmitAuditEvent
+		emitAuditEvent = l.ExternalLog.EmitAuditEventLegacy
 	} else {
-		emitAuditEvent = l.localLog.EmitAuditEvent
+		emitAuditEvent = l.localLog.EmitAuditEventLegacy
 	}
 
 	// Emit the event. If it fails for any reason a Prometheus counter is

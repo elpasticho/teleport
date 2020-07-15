@@ -455,7 +455,13 @@ func NewTestTLSServer(cfg TestTLSServerConfig) (*TestTLSServer, error) {
 		return nil, trace.Wrap(err)
 	}
 
+	srv.Listener, err = net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	srv.TLSServer, err = NewTLSServer(TLSServerConfig{
+		Listener:      srv.Listener,
 		AccessPoint:   accessPoint,
 		TLS:           tlsConfig,
 		APIConfig:     *srv.APIConfig,
@@ -592,14 +598,7 @@ func (t *TestTLSServer) Addr() net.Addr {
 
 // Start starts TLS server on loopback address on the first lisenting socket
 func (t *TestTLSServer) Start() error {
-	var err error
-	if t.Listener == nil {
-		t.Listener, err = net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			return trace.Wrap(err)
-		}
-	}
-	go t.TLSServer.Serve(t.Listener)
+	go t.TLSServer.Serve()
 	return nil
 }
 

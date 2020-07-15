@@ -249,6 +249,18 @@ const (
 	// CallbackTimeout is how long to wait for a response from SSO provider
 	// before timeout.
 	CallbackTimeout = 180 * time.Second
+
+	// ConcurrentUploadsPerStream limits the amount of concurrent uploads
+	// per stream
+	ConcurrentUploadsPerStream = 3
+
+	// UploadGracePeriod is a period after which non-completed
+	// upload is concidered abandoned and will be completed by the reconciler
+	UploadGracePeriod = 24 * time.Hour
+
+	// InactivityFlushPeriod is a period of inactivity
+	// that triggers upload of the data - flush.
+	InactivityFlushPeriod = 5 * time.Minute
 )
 
 var (

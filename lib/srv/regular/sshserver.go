@@ -1,5 +1,5 @@
 /*
-Copyright 2015 Gravitational, Inc.
+Copyright 2015-2020 Gravitational, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -105,6 +105,9 @@ type Server struct {
 	// auditable events
 	alog events.IAuditLog
 
+	// StreamEmitter points to the auth service and emits audit events
+	events.StreamEmitter
+
 	// clock is a system clock
 	clock clockwork.Clock
 
@@ -209,7 +212,7 @@ func (s *Server) isAuditedAtProxy() bool {
 		return false
 	}
 
-	isRecordAtProxy := clusterConfig.GetSessionRecording() == services.RecordAtProxy
+	isRecordAtProxy := services.IsRecordAtProxy(clusterConfig.GetSessionRecording())
 	isTeleportNode := s.Component() == teleport.ComponentNode
 
 	if isRecordAtProxy && isTeleportNode {
@@ -383,6 +386,14 @@ func SetAuditLog(alog events.IAuditLog) ServerOption {
 	}
 }
 
+// SetEmitter assigns an audit event emitter for this server
+func SetEmitter(emitter events.StreamEmitter) ServerOption {
+	return func(s *Server) error {
+		s.StreamEmitter = emitter
+		return nil
+	}
+}
+
 // SetUUID sets server unique ID
 func SetUUID(uuid string) ServerOption {
 	return func(s *Server) error {
@@ -506,6 +517,10 @@ func New(addr utils.NetAddr,
 		return nil, trace.BadParameter("setup valid AuditLog parameter using SetAuditLog")
 	}
 
+	if s.StreamEmitter == nil {
+		return nil, trace.BadParameter("setup valid Emitter parameter using SetEmitter")
+	}
+
 	if s.namespace == "" {
 		return nil, trace.BadParameter("setup valid namespace parameter using SetNamespace")
 	}
@@ -538,6 +553,7 @@ func New(addr utils.NetAddr,
 		AuditLog:    s.alog,
 		AccessPoint: s.authService,
 		FIPS:        s.fips,
+		Emitter:     s.StreamEmitter,
 	}
 
 	// common term handlers
@@ -589,6 +605,11 @@ func New(addr utils.NetAddr,
 
 func (s *Server) getNamespace() string {
 	return services.ProcessNamespace(s.namespace)
+}
+
+// Context returns server shutdown context
+func (s *Server) Context() context.Context {
+	return s.ctx
 }
 
 func (s *Server) Component() string {
@@ -808,22 +829,6 @@ func (s *Server) serveAgent(ctx *srv.ServerContext) error {
 	return nil
 }
 
-// EmitAuditEvent logs a given event to the audit log attached to the
-// server who owns these sessions
-func (s *Server) EmitAuditEvent(event events.Event, fields events.EventFields) {
-	log.Debugf("server.EmitAuditEvent(%v)", event.Name)
-	alog := s.alog
-	if alog != nil {
-		// record the event time with ms precision
-		fields[events.EventTime] = s.clock.Now().In(time.UTC).Round(time.Millisecond)
-		if err := alog.EmitAuditEvent(event, fields); err != nil {
-			log.Error(trace.DebugReport(err))
-		}
-	} else {
-		log.Warn("SSH server has no audit log")
-	}
-}
-
 // HandleRequest processes global out-of-band requests. Global out-of-band
 // requests are processed in order (this way the originator knows which
 // request we are responding to). If Teleport does not support the request
@@ -1028,14 +1033,26 @@ Loop:
 	}
 
 	// Emit a port forwarding event.
-	s.EmitAuditEvent(events.PortForward, events.EventFields{
-		events.PortForwardAddr:    scx.DstAddr,
-		events.PortForwardSuccess: true,
-		events.EventLogin:         scx.Identity.Login,
-		events.EventUser:          scx.Identity.TeleportUser,
-		events.LocalAddr:          scx.ServerConn.LocalAddr().String(),
-		events.RemoteAddr:         scx.ServerConn.RemoteAddr().String(),
-	})
+	if err := s.EmitAuditEvent(s.ctx, &events.PortForward{
+		Metadata: events.Metadata{
+			Type: events.PortForwardEvent,
+			Code: events.PortForwardCode,
+		},
+		UserMetadata: events.UserMetadata{
+			Login: scx.Identity.Login,
+			User:  scx.Identity.TeleportUser,
+		},
+		ConnectionMetadata: events.ConnectionMetadata{
+			LocalAddr:  scx.ServerConn.LocalAddr().String(),
+			RemoteAddr: scx.ServerConn.RemoteAddr().String(),
+		},
+		Addr: scx.DstAddr,
+		Status: events.Status{
+			Success: true,
+		},
+	}); err != nil {
+		log.WithError(err).Warn("Failed to emit port forward event.")
+	}
 }
 
 // handleSessionRequests handles out of band session requests once the session
@@ -1226,7 +1243,7 @@ func (s *Server) handleAgentForwardNode(req *ssh.Request, ctx *srv.ServerContext
 func (s *Server) handleAgentForwardProxy(req *ssh.Request, ctx *srv.ServerContext) error {
 	// Forwarding an agent to the proxy is only supported when the proxy is in
 	// recording mode.
-	if ctx.ClusterConfig.GetSessionRecording() != services.RecordAtProxy {
+	if services.IsRecordAtProxy(ctx.ClusterConfig.GetSessionRecording()) == false {
 		return trace.BadParameter("agent forwarding to proxy only supported in recording mode")
 	}
 
@@ -1313,7 +1330,7 @@ func (s *Server) handleRecordingProxy(req *ssh.Request) {
 
 		// reply true that we were able to process the message and reply with a
 		// bool if we are in recording mode or not
-		recordingProxy = clusterConfig.GetSessionRecording() == services.RecordAtProxy
+		recordingProxy = services.IsRecordAtProxy(clusterConfig.GetSessionRecording())
 		err = req.Reply(true, []byte(strconv.FormatBool(recordingProxy)))
 		if err != nil {
 			log.Warnf("Unable to respond to global request (%v, %v): %v: %v", req.Type, req.WantReply, recordingProxy, err)
@@ -1378,7 +1395,7 @@ func (s *Server) handleProxyJump(ctx context.Context, ccx *sshutils.ConnectionCo
 	// "out of band", before SSH client actually asks for it
 	// which is a hack, but the only way we can think of making it work,
 	// ideas are appreciated.
-	if clusterConfig.GetSessionRecording() == services.RecordAtProxy {
+	if services.IsRecordAtProxy(clusterConfig.GetSessionRecording()) {
 		err = s.handleAgentForwardProxy(&ssh.Request{}, scx)
 		if err != nil {
 			log.Warningf("Failed to request agent in recording mode: %v", err)

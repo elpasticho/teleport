@@ -113,8 +113,8 @@ type FileLog struct {
 	fileTime time.Time
 }
 
-// EmitAuditEvent adds a new event to the log. Part of auth.IFileLog interface.
-func (l *FileLog) EmitAuditEvent(event Event, fields EventFields) error {
+// EmitAuditEventLegacy adds a new event to the log. Part of auth.IFileLog interface.
+func (l *FileLog) EmitAuditEventLegacy(event Event, fields EventFields) error {
 	// see if the log needs to be rotated
 	err := l.rotateLog()
 	if err != nil {
@@ -272,7 +272,7 @@ func (l *FileLog) processSlice(sl SessionLogger, slice *SessionSlice) error {
 		if err != nil {
 			return trace.Wrap(err)
 		}
-		if err := l.EmitAuditEvent(Event{Name: chunk.EventType}, fields); err != nil {
+		if err := l.EmitAuditEventLegacy(Event{Name: chunk.EventType}, fields); err != nil {
 			return trace.Wrap(err)
 		}
 	}

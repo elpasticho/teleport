@@ -1,5 +1,5 @@
 /*
-Copyright 2015-2018 Gravitational, Inc.
+Copyright 2015-2020 Gravitational, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,8 +34,7 @@ import (
 type SessionRecorder interface {
 	io.Writer
 	io.Closer
-	// GetAuditLog returns audit log associated with this log
-	GetAuditLog() IAuditLog
+	Emitter
 }
 
 // DiscardRecorder discards all writes

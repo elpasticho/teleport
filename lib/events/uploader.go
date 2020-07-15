@@ -45,10 +45,18 @@ type UploadHandler interface {
 	Download(ctx context.Context, sessionID session.ID, writer io.WriterAt) error
 }
 
+// MultipartHandler handles both multipart uploads and downloads
+type MultipartHandler interface {
+	UploadHandler
+	MultipartUploader
+}
+
 // UploadEvent is emitted by uploader and is used in tests
 type UploadEvent struct {
 	// SessionID is a session ID
 	SessionID string
+	// UploadID specifies upload ID for a successfull upload
+	UploadID string
 	// Error is set in case if event resulted in error
 	Error error
 }

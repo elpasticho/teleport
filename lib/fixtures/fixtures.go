@@ -1,6 +1,7 @@
 package fixtures
 
 import (
+	"reflect"
 	"runtime/debug"
 
 	"github.com/davecgh/go-spew/spew"
@@ -44,6 +45,70 @@ func DeepCompare(c *check.C, a, b interface{}) {
 	d := &spew.ConfigState{Indent: " ", DisableMethods: true, DisablePointerMethods: true, DisablePointerAddresses: true}
 
 	c.Assert(a, check.DeepEquals, b, check.Commentf("%v\nStack:\n%v\n", diff.Diff(d.Sdump(a), d.Sdump(b)), string(debug.Stack())))
+}
+
+// DeepCompareSlices compares two slices
+func DeepCompareSlices(c *check.C, a, b interface{}) {
+	aval, bval := reflect.ValueOf(a), reflect.ValueOf(b)
+	if aval.Kind() != reflect.Slice {
+		c.Fatalf("%v is not a map, %T", a, a)
+	}
+
+	if bval.Kind() != reflect.Slice {
+		c.Fatalf("%v is not a map, %T", b, b)
+	}
+
+	if aval.Len() != bval.Len() {
+		c.Fatalf("slices have different length of %v and %v", aval.Len(), bval.Len())
+	}
+
+	for i := 0; i < aval.Len(); i++ {
+		DeepCompare(c, aval.Index(i).Interface(), bval.Index(i).Interface())
+	}
+}
+
+// DeepCompareMaps compares two maps
+func DeepCompareMaps(c *check.C, a, b interface{}) {
+	aval, bval := reflect.ValueOf(a), reflect.ValueOf(b)
+	if aval.Kind() != reflect.Map {
+		c.Fatalf("%v is not a map, %T", a, a)
+	}
+
+	if bval.Kind() != reflect.Map {
+		c.Fatalf("%v is not a map, %T", b, b)
+	}
+
+	for _, k := range aval.MapKeys() {
+		vala := aval.MapIndex(k)
+		valb := bval.MapIndex(k)
+
+		if !vala.IsValid() {
+			c.Fatalf("expected valid value for %v in %v", k.Interface(), a)
+		}
+
+		if !valb.IsValid() {
+			c.Fatalf("key %v is found in %v, but not in %v", k.Interface(), a, b)
+		}
+	}
+
+	for _, k := range bval.MapKeys() {
+		vala := aval.MapIndex(k)
+		valb := bval.MapIndex(k)
+
+		if !valb.IsValid() {
+			c.Fatalf("expected valid value for %v in %v", k.Interface(), a)
+		}
+
+		if !vala.IsValid() {
+			c.Fatalf("key %v is found in %v, but not in %v", k.Interface(), a, b)
+		}
+
+		if reflect.ValueOf(vala.Interface()).Kind() == reflect.Map {
+			DeepCompareMaps(c, vala.Interface(), valb.Interface())
+		} else {
+			DeepCompare(c, vala.Interface(), valb.Interface())
+		}
+	}
 }
 
 const SAMLOktaAuthRequestID = `_4d84cad1-1c61-4e4f-8ab6-1358b8d0da77`

@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Gravitational, Inc.
+Copyright 2018-2020 Gravitational, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ import (
 // HandlerSuite is a conformance test suite to verify external UploadHandlers
 // behavior.
 type HandlerSuite struct {
-	Handler events.UploadHandler
+	Handler events.MultipartHandler
 }
 
 func (s *HandlerSuite) UploadDownload(c *check.C) {
@@ -85,7 +85,7 @@ type EventsSuite struct {
 // SessionEventsCRUD covers session events
 func (s *EventsSuite) SessionEventsCRUD(c *check.C) {
 	// Bob has logged in
-	err := s.Log.EmitAuditEvent(events.UserLocalLogin, events.EventFields{
+	err := s.Log.EmitAuditEventLegacy(events.UserLocalLoginE, events.EventFields{
 		events.LoginMethod:        events.LoginMethodSAML,
 		events.AuthAttemptSuccess: true,
 		events.EventUser:          "bob",

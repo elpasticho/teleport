@@ -69,10 +69,9 @@ func (d *MockAuditLog) Close() error {
 	return nil
 }
 
-// EmitAuditEvent is a mock that records even and fields inside a struct.
-func (d *MockAuditLog) EmitAuditEvent(ev Event, fields EventFields) error {
+// EmitAuditEventLegacy is a mock that records even and fields inside a struct.
+func (d *MockAuditLog) EmitAuditEventLegacy(ev Event, fields EventFields) error {
 	d.EmittedEvent = &EmittedEvent{ev, fields}
-
 	return nil
 }
 

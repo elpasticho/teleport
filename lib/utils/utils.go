@@ -39,6 +39,22 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// NilCloser returns closer if it's not nil
+// otherwise closer that is a nop closer
+func NilCloser(r io.Closer) io.Closer {
+	if r == nil {
+		return &nilCloser{}
+	}
+	return r
+}
+
+type nilCloser struct {
+}
+
+func (*nilCloser) Close() error {
+	return nil
+}
+
 // NopWriteCloser returns a WriteCloser with a no-op Close method wrapping
 // the provided Writer w
 func NopWriteCloser(r io.Writer) io.WriteCloser {

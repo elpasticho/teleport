@@ -51,3 +51,7 @@ func (s *FileSuite) TestUploadDownload(c *check.C) {
 func (s *FileSuite) TestDownloadNotFound(c *check.C) {
 	s.DownloadNotFound(c)
 }
+
+func (s *FileSuite) TestStream(c *check.C) {
+	s.Stream(c)
+}

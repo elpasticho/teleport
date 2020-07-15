@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/lib/session"
@@ -110,5 +111,18 @@ func (l *Handler) Upload(ctx context.Context, sessionID session.ID, reader io.Re
 }
 
 func (l *Handler) path(sessionID session.ID) string {
-	return filepath.Join(l.Directory, string(sessionID)+".tar")
+	return filepath.Join(l.Directory, string(sessionID)+tarExt)
+}
+
+// sessionIDFromPath extracts session ID from the filename
+func sessionIDFromPath(path string) (session.ID, error) {
+	base := filepath.Base(path)
+	if filepath.Ext(base) != tarExt {
+		return session.ID(""), trace.BadParameter("expected extension %v, got %v", tarExt, base)
+	}
+	sid := session.ID(strings.TrimSuffix(base, tarExt))
+	if err := sid.Check(); err != nil {
+		return session.ID(""), trace.Wrap(err)
+	}
+	return session.ID(sid), nil
 }
